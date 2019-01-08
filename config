@@ -1,0 +1,12 @@
+# Config file part of `tt`
+# Place this in ~/.config/timetrack/ or ~/.timetrack/
+
+# Absolute path to the tt directory
+export TT_DIR="/home/jooa/Cloud/tt"
+
+# TT
+export TT_FILE="$TT_DIR/time.txt"
+export TT_ARCHIVE="$TT_DIR/archive.txt"
+
+export TT_TIME_FORMAT="+%s"
+#export TT_DEFAULT_ACTIVITY="
