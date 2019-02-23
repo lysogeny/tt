@@ -3,6 +3,7 @@
 
 import os
 import csv
+import time
 
 class NotConnectedError(BaseException):
     """Error raised when file object is not connected"""
@@ -77,100 +78,77 @@ class TrackingFile:
         self.file.close()
         self.reader = None
 
-    def append(self, row):
+    def append(self, activity, timestamp=round(time.time())):
         """Appends something to file"""
+        row = (timestamp, activity)
         if self.data:
             self.data.append(row)
         with open(self.file_name, 'a') as file_conn:
             writer = csv.writer(file_conn, dialect=self.dialect)
             writer.writerow(row)
 
-class TrackingDataBase:
-    """Object representing the Tracking Database and possible operations
+class ConfigurationFile:
+    """Object representing the configuration file"""
+    # This needs:
+    # - Optionally defined file name. If file name is missing:
+    # - File resolver. Figures out what the file might be from a list of options
+    # - configparser.ConfigParser
+    def __init__(self, file_name=None):
+        pass
 
-    Consists of several tracking file objects
-    Makes things available in there and implements __enter__ and __exit__
-    """
-    def __init__(self, dir_name, timefile_name='time.txt',
-                 archivefile_name='archive.txt'):
-        self.dir_name = dir_name
-        if not os.path.isdir(self.dir_name):
-            raise FileNotFoundError
-        self.timefile_name = os.path.join(self.dir_name, timefile_name)
-        self.archivefile_name = os.path.join(self.dir_name, archivefile_name)
-        self.data = None
-        self.dialect = None
+    def parse(self):
+        """Parses the configuration file"""
 
-    def read(self):
-        """Parses a file from database into data, guessing dialect if not defined already."""
-        with open(self.timefile_name, 'r') as timefile:
-            # csv.Sniffer can deduce formats
-            # We first use Sniffer to deduce the format
-            # Then we read it with the identified format
-            if not self.dialect:
-                # But only do this if self.dialect is None
-                self.dialect = csv.Sniffer().sniff(timefile.read(1024)) # determine dialect
-                timefile.seek(0) # return to start of file
-            reader = csv.reader(timefile, dialect=self.dialect)
-            self.data = list(reader)
+    def load(self):
+        """Load the configuration file"""
 
-    def write(self):
-        """Writes data"""
-        with open(self.timefile_name, 'w') as timefile:
-            writer = csv.writer(timefile, dialect=self.dialect)
-            writer.write(self.data)
+class BaseCommand:
+    """Object representing a command"""
+    def __init__(self, config=None):
+        self.config = config
 
-    def archive(self):
-        """Archives entries"""
+    def __call__(self, *args, **kwargs):
+        self.command(*args, **kwargs)
 
-    def __enter__(self):
-        self.read()
-        return self
+    def reconfigure(self, config):
+        """Configures the command"""
+        self.config = config
 
-    def __exit__(self, exception, value, traceback):
-        if self.data:
-            # If we have a non-None self.data, we have probably read the file
-            # and done things to it. We should write at that point.
-            self.write()
+    def command(self, *args, **kwargs):
+        """Command method of this command"""
+        raise NotImplementedError
 
-#def command_action(method):
-#    """Decorator for making an action a command"""
-#    def inner_function(file_name):
-#        def innerest_function(self, *args, **kwargs):
-#            with TrackingFile(file_name) as data:
-#                method(self, data, *args, **kwargs)
-#        return innerest_function
-#    return inner_function
-#
-#class BaseCommand:
-#    """A command base"""
-#    file_name = None
-#
-#    def __init__(self, file_name=None):
-#        if file_name:
-#            self.file_name = file_name
-#
-#    @command_action(file_name)
-#    def action(self, obj, *args, **kwargs):
-#        """Action performed by this command"""
-#        raise NotImplementedError
-#
-#    def help(self):
-#        """Prints help for this command"""
-#        print(self.__doc__)
-#
-#
-#class Append(BaseCommand):
-#    """Append something to the thing"""
-#    def action(self, obj, *args, **kwargs):
-#        obj.append(*args, **kwargs)
-#
-#class App:
-#    """The time tracking application
-#
-#    Provides: Switching
-#    """
-#
-#    def __init__(self, database):
-#        self.config = None
-#        self.database = database
+class CommandAppend(BaseCommand):
+    """Appends something to the database"""
+    def command(self, *args, **kwargs):
+        activity = kwargs['activity']
+        timestamp = kwargs['timestamp']
+        with TrackingFile(self.config['target_file']) as tracking_file:
+            if timestamp:
+                tracking_file.append(activity, timestamp)
+            else:
+                tracking_file.append(activity)
+
+class CommandEdit(BaseCommand):
+    """Opens the database in an editor to allow the user to make edits"""
+    def command(self, *args, **kwargs):
+        pass
+
+class CommandTail(BaseCommand):
+    """Shows the last n entries of the database"""
+    def command(self, *args, **kwargs):
+        count = kwargs['count']
+        with TrackingFile(self.config['target_file']) as tracking_file:
+            tail = tracking_file.read().data[-count:]
+        print(tail)
+
+class App:
+    """Object representing the Application"""
+    def __init__(self):
+        pass
+
+    def __call__(self, *args, **kwargs):
+        pass
+
+    def run(self):
+        """Runs the app"""
