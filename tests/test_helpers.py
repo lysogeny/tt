@@ -36,14 +36,14 @@ class TestFormatExampleData(unittest.TestCase):
 
     def test_single_row(self):
         """Tests if a single row is correctly formatted"""
-        should_string = "abc\tdef"
+        should_string = "abc\tdef" + os.linesep
         in_data = [("abc", "def")]
         is_string = helpers.format_example_data(in_data)
         self.assertEqual(should_string, is_string)
 
     def test_two_row(self):
         """Tests if a single row is correctly formatted"""
-        should_string = "abc\tdef" + os.linesep + "ghi\tjkl"
+        should_string = "abc\tdef" + os.linesep + "ghi\tjkl" + os.linesep
         data = [("abc", "def"),
                 ("ghi", "jkl")]
         is_string = helpers.format_example_data(data)
@@ -51,7 +51,7 @@ class TestFormatExampleData(unittest.TestCase):
 
     def test_mixed_type_rows(self):
         """Tests if a mixed-row types are correctly formatted"""
-        should_string = "abc\tdef" + os.linesep + "123\t456"
+        should_string = "abc\tdef" + os.linesep + "123\t456" + os.linesep
         data = [("abc", "def"),
                 (123, 456)]
         is_string = helpers.format_example_data(data)
@@ -59,7 +59,7 @@ class TestFormatExampleData(unittest.TestCase):
 
     def test_mixed_type_columns(self):
         """Tests if a mixed-column types are correctly formatted"""
-        should_string = "123\tabc" + os.linesep + "789\txyz"
+        should_string = "123\tabc" + os.linesep + "789\txyz" + os.linesep
         data = [(123, "abc"),
                 (789, "xyz")]
         is_string = helpers.format_example_data(data)
@@ -67,10 +67,16 @@ class TestFormatExampleData(unittest.TestCase):
 
     def test_alternate_sep(self):
         """Tests if a alternate separators work"""
-        should_string = "abc def"
+        should_string = "abc def" + os.linesep
         data = [("abc", "def")]
         is_string = helpers.format_example_data(data, sep=' ')
         self.assertEqual(should_string, is_string)
+
+    def test_always_has_newline(self):
+        """Test that formatted strings always end with linesep"""
+        data = [('abc', 'def')]
+        is_string = helpers.format_example_data(data)
+        self.assertTrue(is_string.endswith(os.linesep))
 
 class TestCreateRandomString(unittest.TestCase):
     """Test creation of random strings"""
@@ -211,3 +217,50 @@ class TestStoreExampleData(unittest.TestCase):
 
     def tearDown(self):
         os.remove(self.test_file)
+
+class TestCreateNoFile(unittest.TestCase):
+    """Test the create_no_file function
+
+    Assert that: no file is left at the location
+    """
+
+    def test_no_file_exists(self):
+        """Assert that a file created by create_no_file does not exist"""
+        name = helpers.create_no_file()
+        self.assertFalse(os.path.exists(name))
+
+class TestCreateEmptyFile(unittest.TestCase):
+    """Test that create_empty_file creates an empty file"""
+    def setUp(self):
+        self.file = helpers.create_empty_file()
+
+    def tearDown(self):
+        os.remove(self.file)
+
+    def test_empty_file_exists(self):
+        """Assert that the empty file exists"""
+        self.assertTrue(os.path.exists(self.file))
+
+    def test_empty_file_empty(self):
+        """Assert that the empty file is empty"""
+        with open(self.file, 'r') as connection:
+            content = connection.read()
+        self.assertFalse(content)
+
+class TestCreateSampleConfig(unittest.TestCase):
+    """Test creation of a sample configuration file"""
+    def setUp(self):
+        self.file = helpers.create_sample_config()
+
+    def tearDown(self):
+        os.remove(self.file)
+
+    def test_config_exists(self):
+        """Assert that the file exists"""
+        self.assertTrue(os.path.exists)
+
+    def test_config_content_exists(self):
+        """Assert that the file has content"""
+        with open(self.file, 'r') as connection:
+            content = connection.read()
+        self.assertTrue(content)

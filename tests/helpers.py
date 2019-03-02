@@ -14,7 +14,7 @@ def create_example_file(content: str) -> str:
 
 def format_example_data(data, sep='\t') -> str:
     """Formats data in a table"""
-    return os.linesep.join([sep.join((str(r) for r in row)) for row in data])
+    return os.linesep.join([sep.join((str(r) for r in row)) for row in data]) + os.linesep
 
 def create_random_string(length: int) -> str:
     """Creates a string of random length"""
@@ -43,3 +43,31 @@ def store_example_data(length: int, activities: int) -> str:
     data = create_example_data(length, activities)
     chars = format_example_data(data)
     return create_example_file(chars)
+
+def create_no_file():
+    """Creates no file, but returns the name of a temporary file which does not exist."""
+    with tempfile.NamedTemporaryFile('w', delete=True) as temp:
+        name = temp.name
+    return name
+
+def create_empty_file():
+    """Creates an empty file and returns a handle"""
+    with tempfile.NamedTemporaryFile('w', delete=False) as temp:
+        name = temp.name
+    return name
+
+def create_sample_config():
+    """Creates a random sample configuration file"""
+    sample_file_content = [
+        '[data]',
+        'storage=/tmp/tt.txt',
+        'archive=/tmp/archive.txt',
+        'backup=/tmp/archive.txt',
+        '[user]',
+        'human_format=%Y-%m-%d %H:%M:%S',
+        'editor=vim',
+    ]
+    with tempfile.NamedTemporaryFile('w', delete=False) as temp:
+        name = temp.name
+        temp.write(os.linesep.join(sample_file_content))
+    return name
