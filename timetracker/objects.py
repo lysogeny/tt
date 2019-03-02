@@ -5,6 +5,33 @@ import io
 import os
 import csv
 import time
+from datetime import datetime
+from datetime import timezone
+import configparser
+
+DEFAULT_HUMAN_DATETIME = '%Y-%m-%d %H:%M:%S %z'
+
+DEFAULT_CONFIG = {
+    'file':'/etc/tt/tt.txt'
+}
+DEFAULT_CONFIG_RESOLVE_ORDER = (
+    # XDG dirs first
+    '/home/{}/.config/tt/tt.conf',
+    '/home/{}/.config/tt.conf',
+    '/home/{}/.tt/tt.conf',
+    '/etc/tt/tt.conf',
+    '/etc/tt.conf',
+)
+
+class Dialect(csv.Dialect):
+    #pylint: disable=too-few-public-methods
+    """CSV dialect based loosely on excel_tab"""
+    delimiter = '\t'
+    doublequote = True
+    lineterminator = os.linesep
+    quotechar = '"'
+    quoting = 0
+    skipinitialspace = False
 
 class TrackingFile:
     """A single tracking file object
@@ -43,14 +70,12 @@ class TrackingFile:
     """
     def __init__(self, file_name, dialect=None):
         self.file_name = file_name
-        if not os.path.exists(self.file_name):
-            raise FileNotFoundError
         self.data = []
         self.dialect = dialect
         self.loaded = False
 
     def __getitem__(self, key):
-        self.data.__getitem__(key)
+        return self.data.__getitem__(key)
 
     def __setitem__(self, key, value):
         self.data.__setitem__(key, value)
@@ -65,22 +90,38 @@ class TrackingFile:
     def __exit__(self, *args, **kwargs):
         self.write()
 
-    def format_data(self, ts_format):
-        """Formats data with a given ts_format for timestamps.
+    def __repr__(self):
+        return '<{} at `{}`>'.format(type(self).__name__, self.file_name)
 
+    def format_data(self, ts_format: str, tz_info=None):
+        """Generator formatting data with a given ts_format for timestamps.
+
+        Requires a ts_format, which is a format understood by strftime.
+        tz_info can be used to override the system's timezone.
         The format returned is the same as self.data, except timestamps are
         strings now.
         """
-        return [[time.strftime(ts_format, time.gmtime(row[0])), row[1]] for row in self.data]
+        for row in self.data:
+            time_data = datetime.fromtimestamp(row[0], tz=tz_info).strftime(ts_format)
+            yield [time_data, *row[1:]]
 
-    def format(self, ts_format):
+    def format(self, ts_format: str, tz_info=None):
         """Formats data as an output file and returns it as a string.
 
+        See format_data for more.
         The output is the same as writing to a file with a given timestamp format.
+        If no self.dialect is set, the dialect is set to excel_tab with lineterminator = os.linesep
         """
-        formatted_data = self.format_data(ts_format)
+        if not self.dialect:
+            # This part should basically never be hit in real-world applications.
+            dialect = Dialect
+        else:
+            dialect = self.dialect
+        if not tz_info:
+            tz_info = timezone.utc
+        formatted_data = self.format_data(ts_format, tz_info)
         with io.StringIO() as output:
-            writer = csv.writer(output, dialect=self.dialect)
+            writer = csv.writer(output, dialect=dialect)
             writer.writerows(formatted_data)
             out_string = output.getvalue()
         return out_string
@@ -94,6 +135,10 @@ class TrackingFile:
         is then converted to a list.
         Finally, self.loaded is set to True to indicate that self.data contains
         the whole file and writing should replace, not append.
+
+        time_format is one of the following:
+        - 'unix' indicating a unix timestamp, the default option
+        - a string that can be used with strptime
         """
         with open(self.file_name, 'r') as data_file:
             if not self.dialect:
@@ -102,14 +147,12 @@ class TrackingFile:
             reader = csv.reader(data_file, dialect=self.dialect)
             self.data = list(reader)
             self.loaded = True
+            self.data = [[int(row[0]), *row[1:]] for row in self.data]
 
-    def write(self, ts_format='%s', file_name=None):
-        """Writes self.data to a specific file using a timestamp format.
+    def write(self):
+        """Writes self.data back to the file
 
-        By default it writes data to the file stored in the object, but this
-        can be changed by defining file_name. ts_format defaults to '%s',
-        indicating the unix epoch
-
+        Writes the data into the file (self.file_name). For saving files elsewhere, see save
         This has different effects based on self.loaded:
 
         If self.loaded is True, i.e. the file will be replaced with self.data.
@@ -118,20 +161,60 @@ class TrackingFile:
         If self.loaded is False, self.data will be appended to the file.
         The contents of self.data are then removed to avoid duplicate writes.
         """
-        if not file_name:
-            file_name = self.file_name
         if self.loaded:
             mode = 'w'
         else:
             mode = 'a'
-        out_data = self.format_data(ts_format)
-        with open(file_name, mode) as file_conn:
-            writer = csv.writer(file_conn, dialect=self.dialect)
-            writer.writerows(out_data)
+        if not self.dialect and os.path.exists(self.file_name):
+            # No dialect exists, but we can determine it from the file
+            with open(self.file_name, 'r') as file_conn:
+                sample = file_conn.read(1024)
+                dialect = csv.Sniffer().sniff(sample)
+        elif not self.dialect and not os.path.exists(self.file_name):
+            # No dialect, and no way of guessing. Go back to defaults.
+            # The default dialect is excel_tab with os specific lineseps.
+            dialect = Dialect
+        else:
+            # The dialect exists
+            dialect = self.dialect
+        with open(self.file_name, mode) as file_conn:
+            # Write
+            writer = csv.writer(file_conn, dialect=dialect)
+            writer.writerows(self.data)
         if not self.loaded:
-            self.data = []
+            self.data = [] # clear data to avoid duplicate appends
+        if not self.dialect:
+            self.dialect = dialect # set dialect if not already set.
 
-    def append(self, activity, timestamp=round(time.time())):
+    def save(self, file_name, ts_format=DEFAULT_HUMAN_DATETIME, tz_info=None):
+        """Save human-readable data to file specified
+
+        Save data to file file_name.
+        Optionally accept changed ts_format or tz_info
+        """
+        if not tz_info:
+            tz_info = timezone.utc
+        write_data = self.format(ts_format, tz_info)
+        with open(file_name, 'w') as connection:
+            connection.write(write_data)
+
+    def load(self, file_name, ts_format=DEFAULT_HUMAN_DATETIME, tz_info=None):
+        """Loads human-readable data from specified file
+
+        Optionally change of ts_format and tz_data are possible"""
+        if not os.path.exists(file_name):
+            raise FileNotFoundError('The file you are trying to load does not exist')
+        if not tz_info:
+            tz_info = timezone.utc
+        with open(file_name, 'r') as connection:
+            this_dialect = csv.Sniffer().sniff(connection.read(1024))
+            connection.seek(0)
+            reader = csv.reader(connection, dialect=this_dialect)
+            data = list(reader)
+            data = [[int(datetime.strptime(row[0], ts_format).timestamp()), *row[1:]]
+                    for row in data]
+            self.data = data
+    def append(self, activity: str, timestamp=round(time.time())):
         """Appends an activity at an optionally defined timestamp.
 
         Appends the activity with a timestamp as a row. If no timestamp is
@@ -140,20 +223,42 @@ class TrackingFile:
         row = [timestamp, activity]
         self.data.append(row)
 
-class ConfigurationFile:
-    """Object representing the configuration file"""
-    # This needs:
-    # - Optionally defined file name. If file name is missing:
-    # - File resolver. Figures out what the file might be from a list of options
-    # - configparser.ConfigParser
-    def __init__(self, file_name=None):
-        pass
+    @property
+    def timestamp(self):
+        """Timestamps from data"""
+        return [row[0] for row in self.data]
 
-    def parse(self):
-        """Parses the configuration file"""
+    @property
+    def activity(self):
+        """Activities from data"""
+        return [row[1] for row in self.data]
 
-    def load(self):
-        """Load the configuration file"""
+
+def file_finder(order: list):
+    """Try out files in order. Return first hit. Raise FileNotFoundError if None."""
+    if not order:
+        raise FileNotFoundError('No file found')
+    elif os.path.exists(order[0]):
+        return order[0]
+    else:
+        return file_finder(order[1:])
+
+def config_loader(file_name: str = None, order: list = None, defaults: dict = None):
+    """Finds a configuration file from order or file_name
+
+    If file_name is given, it will try to load file_name. If file_name is
+    missing, but order is given, it will use file_finder to find the first file.
+    if file_name and order are missing it will use DEFAULT_CONFIG_RESOLVE_ORDER
+    to find a suitable file
+    """
+    if not defaults:
+        defaults = DEFAULT_CONFIG
+    if not file_name:
+        if not order:
+            order = DEFAULT_CONFIG_RESOLVE_ORDER
+        file_name = file_finder(order)
+    config = configparser.ConfigParser(defaults=defaults)
+    return config.read(file_name)
 
 class BaseCommand:
     """Object representing a command"""
