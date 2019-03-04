@@ -12,7 +12,9 @@ import configparser
 DEFAULT_HUMAN_DATETIME = '%Y-%m-%d %H:%M:%S %z'
 
 DEFAULT_CONFIG = {
-    'file':'/etc/tt/tt.txt'
+    'user': {
+        'file':'/etc/tt/tt.conf',
+    },
 }
 DEFAULT_CONFIG_RESOLVE_ORDER = (
     # XDG dirs first
@@ -257,8 +259,10 @@ def config_loader(file_name: str = None, order: list = None, defaults: dict = No
         if not order:
             order = DEFAULT_CONFIG_RESOLVE_ORDER
         file_name = file_finder(order)
-    config = configparser.ConfigParser(defaults=defaults)
-    return config.read(file_name)
+    config = configparser.RawConfigParser()
+    config.read_dict(defaults)
+    config.read(file_name)
+    return config
 
 class BaseCommand:
     """Object representing a command"""
